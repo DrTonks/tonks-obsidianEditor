@@ -3,3 +3,8 @@
 .tonks-preview-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tonks-preview-toolbar>span{flex:1;min-width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.tonks-preview-frame{border:1px solid var(--background-modifier-border);border-radius:8px;flex:1;width:100%;min-height:0;background:var(--background-primary)}.tonks-preview-mobile{max-width:390px;align-self:center}.tonks-preview-status{font-size:12px;color:var(--text-muted)}
 
 .view-content:has(> .tonks-preview-overlay){position:relative}
+
+.tonks-live-block{position:relative;margin:10px 0;padding-top:20px}
+.tonks-live-edit{position:absolute;right:6px;top:0;font-size:11px;height:22px;padding:0 8px;opacity:0;z-index:1}
+.tonks-live-block:hover .tonks-live-edit,.tonks-live-block:focus-within .tonks-live-edit{opacity:1}
+.tonks-live-frame{display:block;width:100%;height:100px;border:0;background:transparent}

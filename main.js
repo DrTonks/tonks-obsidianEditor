@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {template,insertion} from './formats.mjs';
 import {loadConfig,loadAdapter,findBlogRoot} from './config.mjs';
+import {createLivePreview} from './live-preview.js';
 
 class Choose extends FuzzySuggestModal {
  constructor(app,items,callback){super(app);this.items=items;this.callback=callback;this.setPlaceholder('搜索标题或路径…');}
@@ -17,19 +18,72 @@ class Fields extends Modal {
 }
 export default class BlogTools extends Plugin {
  async onload(){
-  this.settings=Object.assign({blogRoot:'',configPath:'editor/blog-editor.json',theme:'light-blue'},await this.loadData());
+  this.settings=Object.assign({blogRoot:'',configPath:'editor/blog-editor.json',theme:'light-blue',livePreview:false},await this.loadData());
+  this.liveWorkers=new Set();this.liveModes=new Map();this.liveTransition=Promise.resolve();
+  this.registerEditorExtension(createLivePreview(this));
   this.overlays=new Set();
   this.registerEvent(this.app.workspace.on("file-open",()=>{for(const close of [...this.overlays])close();}));
   this.addSettingTab(new Settings(this.app,this));
+  this.addCommand({id:'toggle-live-preview',name:'开启 / 关闭单栏实时预览',callback:()=>this.setLivePreview(!this.settings.livePreview)});
+  this.liveButton=this.addRibbonIcon('scan-eye','开启 / 关闭博客实时预览',()=>this.setLivePreview(!this.settings.livePreview));
+  this.registerEvent(this.app.workspace.on('active-leaf-change',()=>this.prepareLiveView()));
+  this.registerEvent(this.app.workspace.on('file-open',()=>this.prepareLiveView()));
+  this.app.workspace.onLayoutReady(()=>this.prepareLiveView());
+  this.updateLiveButton();
   this.addCommand({id:'preview',name:'博客预览 / 返回编辑',editorCallback:(_e,v)=>this.preview(v)});
   this.addRibbonIcon('book-open','博客预览',()=>{const view=this.app.workspace.getActiveViewOfType(MarkdownView);if(view)this.preview(view);else new Notice('请先打开一篇 Markdown 文章');});
   this.registerEvent(this.app.workspace.on('editor-menu',(menu,editor,view)=>{
    menu.addSeparator();menu.addItem(item=>item.setTitle('博客预览').setIcon('book-open').onClick(()=>this.preview(view)));
+   menu.addItem(item=>item.setTitle('单栏实时预览').setIcon('scan-eye').setChecked(this.settings.livePreview).onClick(()=>this.setLivePreview(!this.settings.livePreview)));
    try{const config=this.readConfig();menu.addItem(item=>{item.setTitle(config.name+' · 格式').setIcon('blocks');const sub=item.setSubmenu();for(const f of config.formats)sub.addItem(i=>i.setTitle(f.name).onClick(()=>this.insert(f.id,editor,view)));});}catch(e){menu.addItem(item=>item.setTitle('博客配置不可用：'+e.message).setDisabled(true));}
   }));
   this.addCommand({id:'insert-format',name:'选择博客格式',editorCallback:(e,v)=>{try{new Choose(this.app,this.readConfig().formats.map(f=>({label:f.name,id:f.id})),f=>this.insert(f.id,e,v)).open();}catch(error){new Notice(error.message);}}});
  }
- onunload(){for(const close of this.overlays)close();}
+ onunload(){for(const close of this.overlays)close();this.settings.livePreview=false;for(const worker of this.liveWorkers)worker.destroy();this.restoreLiveViews();}
+ updateLiveButton(){this.liveButton?.classList.toggle('is-active',this.settings.livePreview);this.liveButton?.setAttribute('aria-pressed',String(this.settings.livePreview));}
+ liveError(message){new Notice('实时预览：'+message);}
+ // Serialize mode changes, including workspace events and unload, across async setState.
+ queueLiveTransition(action){
+  const transition=this.liveTransition.then(action);
+  this.liveTransition=transition.catch(error=>this.liveError(error.message));
+  return transition;
+ }
+ setLivePreview(enabled){
+  this.settings.livePreview=enabled;this.updateLiveButton();
+  for(const close of [...this.overlays])close();
+  for(const worker of this.liveWorkers)worker.refresh();
+  return this.queueLiveTransition(async()=>{
+   await this.saveData({...this.settings});
+   if(this.settings.livePreview)await this.applyLiveView();else await this.restoreLiveModes();
+   for(const worker of this.liveWorkers)worker.refresh();
+  });
+ }
+ prepareLiveView(){return this.queueLiveTransition(()=>this.applyLiveView());}
+ async applyLiveView(){
+  if(!this.settings.livePreview)return;
+  const view=this.app.workspace.getActiveViewOfType(MarkdownView);if(!view?.file)return;
+  const state=view.getState();
+  if(!this.liveModes.has(view))this.liveModes.set(view,{mode:state.mode,source:state.source});
+  // Let our block decorations own rendering; native CM editing and undo remain intact.
+  if(state.mode!=='source'||state.source!==true)await view.setState({...state,mode:'source',source:true},{history:false});
+  for(const worker of this.liveWorkers)worker.refresh();
+ }
+ restoreLiveViews(){return this.queueLiveTransition(()=>this.restoreLiveModes());}
+ async restoreLiveModes(){
+  const modes=[...this.liveModes];
+  await Promise.all(modes.map(async([view,mode])=>{
+   if(view.contentEl.isConnected)await view.setState({...view.getState(),...mode},{history:false});
+   this.liveModes.delete(view);
+  }));
+ }
+ async renderLive(text,file){
+  const config=this.readConfig(),root=this.root(),adapter=loadAdapter(root,config);
+  return adapter.renderPreview({text,file,live:true,theme:this.settings.theme,root,config,
+   parseHtml:html=>new DOMParser().parseFromString(html,'text/html'),
+   findPost:slug=>this.app.vault.getAbstractFileByPath(config.postsPath.replace(/\/$/,'')+'/'+slug+'.md'),
+   metadata:f=>this.app.metadataCache.getFileCache(f)?.frontmatter,
+   resolveAsset:(src,f)=>this.localAsset(src,f)});
+ }
  root(){return this.settings.blogRoot.trim()||findBlogRoot(this.app.vault.adapter.getBasePath());}
  readConfig(){const root=this.root();if(!root)throw Error('请在设置中指定博客项目目录');this.config=loadConfig(root,this.settings.configPath);return this.config;}
  async insert(kind,editor,view){
@@ -89,12 +143,14 @@ export default class BlogTools extends Plugin {
    frame.srcdoc=rendered.html;
    status.hidden=!rendered.missing;status.textContent=rendered.missing?`${rendered.missing} 个本地资源未找到或超过 30MB。`:'';
   }catch(e){status.hidden=false;status.textContent='预览失败：'+e.message;new Notice(status.textContent);}};
-  theme.onchange=()=>{this.settings.theme=theme.value;this.saveData(this.settings);return draw();};await draw();
+  theme.onchange=()=>{this.settings.theme=theme.value;this.saveData(this.settings);for(const worker of this.liveWorkers)worker.refresh();return draw();};await draw();
  }
 }
 class Settings extends PluginSettingTab {
  constructor(app,plugin){super(app,plugin);this.plugin=plugin;}
  display(){this.containerEl.empty();this.containerEl.createEl('h2',{text:'博客工具'});
+  new Setting(this.containerEl).setName('单栏实时预览').setDesc('光标所在块保持 Markdown 编辑，其余内容显示博客样式；停笔 300ms 后刷新。关闭后恢复原编辑模式。').addToggle(t=>t.setValue(this.plugin.settings.livePreview).onChange(value=>this.plugin.setLivePreview(value)));
+  try{const config=this.plugin.readConfig();new Setting(this.containerEl).setName('预览主题').addDropdown(d=>{for(const theme of config.themes)d.addOption(theme.id,theme.name);d.setValue(this.plugin.settings.theme).onChange(async value=>{this.plugin.settings.theme=value;await this.plugin.saveData(this.plugin.settings);for(const worker of this.plugin.liveWorkers)worker.refresh();});});}catch{/* The existing root/config settings below allow repairing configuration. */}
   for(const [key,label,desc]of [['blogRoot','博客项目目录','留空时从工作区向上查找 editor/blog-editor.json。'],['configPath','编辑器配置路径','相对于博客根目录；默认 editor/blog-editor.json。配置中的本地预览模块仅应来自你信任的博客代码。']])new Setting(this.containerEl).setName(label).setDesc(desc).addText(t=>t.setValue(this.plugin.settings[key]).onChange(async value=>{this.plugin.settings[key]=value;await this.plugin.saveData(this.plugin.settings);}));
  }
 }

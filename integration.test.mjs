@@ -3,12 +3,12 @@ const require=createRequire(import.meta.url);
 const dom=new JSDOM('<!doctype html><html><body></body></html>',{url:'https://obsidian.test'});const win=dom.window;
 win.HTMLElement.prototype.createEl=function(tag,opts={}){const e=win.document.createElement(tag);if(opts.cls)e.className=opts.cls;if(opts.text)e.textContent=opts.text;this.append(e);return e};
 win.HTMLElement.prototype.createDiv=function(opts){return this.createEl('div',opts)};win.HTMLElement.prototype.createSpan=function(opts){return this.createEl('span',opts)};
-class Plugin{async loadData(){return {}} async saveData(){} registerEvent(){} addSettingTab(){} addCommand(){} addRibbonIcon(){}}
+class Plugin{async loadData(){return {}} async saveData(){} registerEvent(){} registerEditorExtension(){} addSettingTab(){} addCommand(){} addRibbonIcon(){}}
 const api={Plugin,MarkdownView:class{},Modal:class{},Setting:class{},Notice:class{constructor(text){throw Error(text)}},FuzzySuggestModal:class{},PluginSettingTab:class{}};
 const mod={exports:{}};const context=vm.createContext({module:mod,exports:mod.exports,require:id=>id==='obsidian'?api:require(id),console,Buffer,process,URL,TextEncoder,TextDecoder,setTimeout,clearTimeout,DOMParser:win.DOMParser,document:win.document,window:win});
 vm.runInContext(fs.readFileSync('dist/main.js','utf8'),context);const Tools=mod.exports.default;
 test('actual plugin builds snapshot, themes and returns without touching editor',async()=>{
- const plugin=new Tools();plugin.app={workspace:{on:()=>({})},vault:{adapter:{getBasePath:()=>path.resolve('../blogExample/src/content')},getAbstractFileByPath:()=>null},metadataCache:{}};await plugin.onload();
+ const plugin=new Tools();plugin.app={workspace:{on:()=>({}),onLayoutReady:()=>{}},vault:{adapter:{getBasePath:()=>path.resolve('../blogExample/src/content')},getAbstractFileByPath:()=>null},metadataCache:{}};await plugin.onload();
  const text='---\ntitle: 测试文章\n---\n:::quote{author="Tonks"}\n正文\n:::\n\n::github{repo="DrTonks/tonks-blog"}\n\n::post{slug="memory/memory"}';
  let focused=0;const view={file:{path:'posts/test.md',basename:'test'},contentEl:win.document.body.createDiv(),editor:{getValue:()=>text,focus:()=>focused++}};
  await plugin.preview(view);const frame=view.contentEl.querySelector('iframe');assert.ok(frame);assert.match(frame.srcdoc,/article-quote/);assert.match(frame.srcdoc,/preview-github/);assert.match(frame.srcdoc,/article-post-card/);assert.match(frame.srcdoc,/post-card-placeholder/);assert.equal(frame.getAttribute('sandbox'),'allow-scripts');
@@ -16,3 +16,38 @@ test('actual plugin builds snapshot, themes and returns without touching editor'
  fs.mkdirSync('verification',{recursive:true});fs.writeFileSync('verification/actual-preview.html',frame.srcdoc);await plugin.preview(view);assert.equal(view.contentEl.querySelector('iframe'),null);assert.equal(view.editor.getValue(),text);assert.equal(focused,1);plugin.onunload();
 });
 test('local resources cannot escape the configured vault',async()=>{const plugin=new Tools();plugin.settings={blogRoot:path.resolve('../blogExample')};plugin.app={vault:{adapter:{getBasePath:()=>path.resolve('../blogExample/src/content')}}};assert.equal(await plugin.localAsset('../../../../serverSSH.txt',{path:'posts/test.md'}),'');assert.equal(await plugin.localAsset('file:///C:/private.png',{path:'posts/test.md'}),'');});
+
+test('live preview toggles source mode and restores the original mode without editing text',async()=>{
+ const plugin=new Tools();let state={file:'posts/test.md',mode:'source',source:false};let text='original';
+ const view={file:{path:'posts/test.md'},contentEl:win.document.body.createDiv(),getState:()=>state,setState:async value=>{state=value;},editor:{getValue:()=>text}};
+ plugin.app={workspace:{on:()=>({}),onLayoutReady:()=>{},getActiveViewOfType:()=>view}};
+ await plugin.onload();await plugin.setLivePreview(true);assert.equal(state.source,true);assert.equal(plugin.settings.livePreview,true);
+ await plugin.setLivePreview(false);assert.equal(state.source,false);assert.equal(text,'original');assert.equal(plugin.liveModes.size,0);plugin.onunload();
+});
+
+const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+async function liveFixture(){
+ const plugin=new Tools();let state={file:'posts/test.md',mode:'source',source:false};
+ const view={file:{path:'posts/test.md'},contentEl:win.document.body.createDiv(),getState:()=>state,setState:async value=>{state=value;}};
+ plugin.app={workspace:{on:()=>({}),onLayoutReady:()=>{},getActiveViewOfType:()=>view}};
+ await plugin.onload();return {plugin,view,state:()=>state};
+}
+test('rapid toggles with a pending save settle on the latest mode and restore the original',async()=>{
+ const {plugin,state}=await liveFixture();await plugin.setLivePreview(true);
+ const saving=deferred(),started=deferred(),saved=[];
+ plugin.saveData=async value=>{saved.push(value.livePreview);if(saved.length===1){started.resolve();await saving.promise;}};
+ const off=plugin.setLivePreview(false);await started.promise;
+ const on=plugin.setLivePreview(true);saving.resolve();await Promise.all([off,on]);
+ assert.equal(plugin.settings.livePreview,true);assert.equal(state().source,true);assert.equal(plugin.liveModes.size,1);assert.equal(saved.at(-1),true);
+ await plugin.setLivePreview(false);assert.equal(state().source,false);assert.equal(plugin.liveModes.size,0);plugin.onunload();await plugin.liveTransition;
+});
+test('pending mode changes, workspace events and unload cannot interleave restores',async()=>{
+ const {plugin,view,state}=await liveFixture();await plugin.setLivePreview(true);
+ const restoring=deferred(),started=deferred(),original=view.setState;let calls=0;
+ view.setState=async value=>{calls++;if(calls===1){started.resolve();await restoring.promise;}await original(value);};
+ const off=plugin.setLivePreview(false);await started.promise;
+ const on=plugin.setLivePreview(true),event=plugin.prepareLiveView();
+ assert.equal(calls,1);restoring.resolve();await Promise.all([off,on,event]);
+ assert.equal(state().source,true);assert.equal(plugin.liveModes.size,1);
+ plugin.onunload();await plugin.liveTransition;assert.equal(state().source,false);assert.equal(plugin.liveModes.size,0);
+});

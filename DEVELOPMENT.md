@@ -25,3 +25,9 @@
 ## 0.2.0 · 博客配置驱动
 
 站点相关 renderer/preview.css 与 KaTeX 资源迁移至 blogExample/editor。宿主没有博客源码导入，构建约 19KB；博客适配资源独立构建。格式配置每次操作读取，适配模块按 SHA256 内容变更清除 require 缓存。设置提供博客根目录与配置相对路径，保留旧 blogRoot 数据。新增配置热读取、适配器热更新验证。旧逐格式固定命令改为动态“选择博客格式”命令，右键菜单按配置顺序生成。
+
+## 0.3.0 · 单栏原位实时预览
+
+使用 Obsidian 的 CodeMirror StateField 与块替换装饰，仅渲染不与选区相交的完整块。适配器从实际 AST 生成源码范围，并处理 Frontmatter/BOM/CRLF 偏移。输入后 300ms 更新，异步结果需匹配文档快照和文件；切换/卸载释放定时器、消息监听和视图状态。CM 依赖由 Obsidian 提供，打包 external 避免多实例。
+
+各块仍在不授予同源权限的 sandbox iframe 内，点击通过实例 token 与 event.source 校验定位到原生编辑器；不通过预览 DOM 回写正文。真实 Obsidian 1.13.7 已验证开关、段落点击、更新、撤销与模式恢复。
