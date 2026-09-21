@@ -12,7 +12,7 @@ const bundle=await build({entryPoints:['live-preview.js'],bundle:true,write:fals
 const mod={exports:{}};
 const viewAPI={...require('@codemirror/view'),ViewPlugin:{fromClass:cls=>cls}};
 vm.runInNewContext(bundle.outputFiles[0].text,{module:mod,exports:mod.exports,require:id=>id==='obsidian'?api:id==='@codemirror/view'?viewAPI:require(id),setTimeout,clearTimeout,console,DOMParser:new JSDOM('').window.DOMParser});
-const {createLivePreview,liveResult,liveRefresh,visibleBlocks,lineBlocks}=mod.exports;
+const {createLivePreview,liveResult,liveRefresh,visibleBlocks,lineBlocks,liveShell}=mod.exports;
 
 test('only valid inactive blocks are rendered; spanning selections retain source',()=>{
  const blocks=[{from:0,to:4},{from:6,to:10},{from:12,to:18},{from:17,to:20},{from:-1,to:2}];
@@ -61,4 +61,18 @@ test('whole-line blocks preserve same-line HTML siblings and leave unmapped text
  assert.equal(normalize('a GAP b',[{from:0,to:1,html:'a'},{from:6,to:7,html:'b'}]).length,0);
  assert.equal(normalize('a b',[{from:0,to:2,html:'a'},{from:1,to:3,html:'b'}]).length,0);
  assert.equal(normalize('one\ntwo',[{from:0,to:4,html:'one'},{from:4,to:7,html:'two'}]).length,2);
+});
+
+test('live shell follows editor surface and overrides per-block article margins',()=>{
+ const host=new JSDOM('<body class="theme-dark" style="--background-primary:#242424;--text-normal:#ddd;--font-text-size:17px"></body>').window.document;
+ const preview=new JSDOM('<html data-yellow="true"><head></head><body><script nonce="tonks-preview">/* interactions */</script></body></html>').window.document;
+ const shell=liveShell(preview,host);
+ assert.match(shell.before, /class="dark" data-yellow="true"/);
+ assert.match(shell.before, /--card-bg:#242424/);
+ assert.match(shell.before, /background:var\(--card-bg\)/);
+ assert.match(shell.before, /#post-container \.custom-md>:first-child\{margin-top:0!important\}/);
+ assert.match(shell.before, /font-size:17px/);
+ assert.match(shell.after, /interactions/);
+ host.body.classList.remove('theme-dark');
+ assert.match(liveShell(preview,host).before, /class="" data-yellow="true"/);
 });

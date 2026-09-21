@@ -29,6 +29,7 @@ export default class BlogTools extends Plugin {
   this.registerEvent(this.app.workspace.on('active-leaf-change',()=>this.prepareLiveView()));
   this.registerEvent(this.app.workspace.on('file-open',()=>this.prepareLiveView()));
   this.app.workspace.onLayoutReady(()=>this.prepareLiveView());
+  this.registerEvent(this.app.workspace.on('css-change',()=>{for(const worker of this.liveWorkers)worker.refresh();}));
   this.updateLiveButton();
   this.addCommand({id:'preview',name:'博客预览 / 返回编辑',editorCallback:(_e,v)=>this.preview(v)});
   this.addRibbonIcon('book-open','博客预览',()=>{const view=this.app.workspace.getActiveViewOfType(MarkdownView);if(view)this.preview(view);else new Notice('请先打开一篇 Markdown 文章');});

@@ -34,6 +34,18 @@ export function lineBlocks(blocks,doc){
   return [{from:group.from,to:group.to,html:group.blocks.map(block=>block.html).join('')}];
  });
 }
+// Live blocks share the editor surface; the full-page preview keeps its own theme.
+export function liveShell(doc, hostDocument) {
+ const body=hostDocument?.body, styles=body?hostDocument.defaultView.getComputedStyle(body):null;
+ const dark=body?body.classList.contains('theme-dark'):doc.documentElement.classList.contains('dark');
+ const value=(key,fallback)=>styles?.getPropertyValue(key).trim()||fallback;
+ const background=value('--background-primary',dark?'#1e1e1e':'#ffffff');
+ const foreground=value('--text-normal',dark?'#dadada':'#222222');
+ const size=value('--font-text-size','16px');
+ const overrides=`html,body{margin:0;min-height:0;overflow:hidden;background:var(--card-bg)}html{--card-bg:${background}!important;--tw-prose-body:${foreground}!important;--tw-prose-headings:${foreground}!important}body{color:var(--tw-prose-body)}#post-container{padding:0;max-width:none}#post-container .custom-md{max-width:none!important;font-size:${size};line-height:1.7}#post-container .custom-md>:first-child{margin-top:0!important}#post-container .custom-md>:last-child{margin-bottom:0!important}`;
+ return {before:`<!doctype html><html class="${dark?'dark':''}" data-yellow="${doc.documentElement.dataset.yellow}">${doc.head.outerHTML}<body><style>${overrides.replace(/<\/style/gi,'<\\/style')}</style><article id="post-container"><div class="custom-md">`,after:`</div></article>${[...doc.body.querySelectorAll('script')].map(el=>el.outerHTML).join('')}`};
+}
+
 class BlogBlock extends WidgetType {
  constructor(block, shell) { super(); this.block = block; this.shell = shell; }
  eq(other) { return this.block.from === other.block.from && this.block.to === other.block.to && this.block.html === other.block.html && this.shell.before === other.shell.before && this.shell.after === other.shell.after; }
@@ -93,7 +105,7 @@ export function createLivePreview(plugin) {
     if(this.dead||generation!==this.generation||!plugin.settings.livePreview||view.state.doc.toString()!==text||view.state.field(editorInfoField,false)?.file?.path!==file.path)return;
     if(!Array.isArray(rendered.blocks))throw Error('博客适配器不支持实时预览，请先在博客目录运行 pnpm editor:build');
     const doc=new DOMParser().parseFromString(rendered.html,'text/html');
-    const shell={before:`<!doctype html><html class="${doc.documentElement.className}" data-yellow="${doc.documentElement.dataset.yellow}">${doc.head.outerHTML}<body><style>html,body{margin:0;min-height:0;overflow:hidden}#post-container{padding:4px 8px;max-width:none}.custom-md>:first-child{margin-top:0}.custom-md>:last-child{margin-bottom:0}</style><article id="post-container"><div class="custom-md">`,after:`</div></article>${[...doc.body.querySelectorAll('script')].map(el=>el.outerHTML).join('')}`};
+    const shell=liveShell(doc,view.dom?.ownerDocument);
     const blocks=lineBlocks(rendered.blocks,view.state.doc);
     view.dispatch({effects:liveResult.of({blocks,shell})});this.lastError='';
    } catch(error) { if(!this.dead&&generation===this.generation&&this.lastError!==error.message){this.lastError=error.message;plugin.liveError(error.message);} }
