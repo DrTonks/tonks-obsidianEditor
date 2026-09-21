@@ -1,0 +1,9 @@
+{
+  "id": "tonks-blog-tools",
+  "name": "Tonks 博客工具",
+  "version": "0.2.0",
+  "minAppVersion": "1.5.0",
+  "description": "博客专属格式插入与无服务器按需预览。",
+  "author": "Tonks",
+  "isDesktopOnly": true
+}

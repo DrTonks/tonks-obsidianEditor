@@ -1,0 +1,10 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const root=path.dirname(fileURLToPath(import.meta.url));
+const vault=process.env.TONKS_VAULT||path.resolve(root,'../blogExample/src/content');
+await fs.access(path.join(vault,'.obsidian'));
+const target=path.join(vault,'.obsidian/plugins/tonks-blog-tools');await fs.mkdir(target,{recursive:true});
+for(const name of ['main.js','manifest.json','styles.css'])await fs.copyFile(path.join(root,'dist',name),path.join(target,name));
+console.log('Installed:',target);
+console.log('在 Obsidian 设置 → 第三方插件 中启用 Tonks 博客工具。');

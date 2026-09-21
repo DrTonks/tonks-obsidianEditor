@@ -1,0 +1,4 @@
+node_modules/
+dist/
+katex-inline.css
+verification/

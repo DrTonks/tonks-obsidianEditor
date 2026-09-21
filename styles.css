@@ -1,0 +1,5 @@
+.markdown-reading-view,.markdown-source-view{position:relative}
+.tonks-preview-overlay{position:absolute;inset:0;z-index:20;background:var(--background-primary);display:flex;flex-direction:column;padding:8px;gap:8px}
+.tonks-preview-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tonks-preview-toolbar>span{flex:1;min-width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.tonks-preview-frame{border:1px solid var(--background-modifier-border);border-radius:8px;flex:1;width:100%;min-height:0;background:var(--background-primary)}.tonks-preview-mobile{max-width:390px;align-self:center}.tonks-preview-status{font-size:12px;color:var(--text-muted)}
+
+.view-content:has(> .tonks-preview-overlay){position:relative}
