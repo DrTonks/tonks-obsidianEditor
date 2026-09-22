@@ -8,3 +8,18 @@
 .tonks-live-edit{position:absolute;right:4px;top:2px;font-size:11px;height:22px;padding:0 8px;opacity:0;z-index:1}
 .tonks-live-block:hover .tonks-live-edit,.tonks-live-block:focus-within .tonks-live-edit{opacity:1}
 .tonks-live-frame{display:block;width:100%;height:36px;border:0;background:transparent}
+
+/* Scoped to the active editor; disabling/unloading restores Obsidian's own palette. */
+.tonks-live-editor{
+ --background-primary:var(--tonks-live-bg);--background-primary-alt:var(--tonks-live-bg);--background-secondary:var(--tonks-live-soft);
+ --text-normal:var(--tonks-live-text);--text-muted:var(--tonks-live-muted);--text-faint:var(--tonks-live-muted);--text-accent:var(--tonks-live-accent);
+ --inline-title-color:var(--tonks-live-heading);--h1-color:var(--tonks-live-heading);--h2-color:var(--tonks-live-heading);--h3-color:var(--tonks-live-heading);--h4-color:var(--tonks-live-heading);--h5-color:var(--tonks-live-heading);--h6-color:var(--tonks-live-heading);
+ --code-normal:var(--tonks-live-text);--code-comment:var(--tonks-live-muted);--code-string:var(--tonks-live-accent);--code-keyword:var(--tonks-live-accent);--code-function:var(--tonks-live-accent);--code-important:var(--tonks-live-accent);--code-operator:var(--tonks-live-text);--code-property:var(--tonks-live-accent);--code-punctuation:var(--tonks-live-muted);--code-tag:var(--tonks-live-accent);--code-value:var(--tonks-live-text);--code-background:var(--tonks-live-soft);
+ --background-modifier-border:var(--tonks-live-border);--interactive-accent:var(--tonks-live-accent);--text-selection:color-mix(in srgb,var(--tonks-live-accent) 25%,transparent);
+ background:var(--tonks-live-bg)!important;color:var(--tonks-live-text);color-scheme:var(--tonks-live-scheme);
+}
+.tonks-live-editor .cm-editor,.tonks-live-editor .cm-scroller{background:var(--tonks-live-bg);color:var(--tonks-live-text)}
+.tonks-live-editor .cm-content{caret-color:var(--tonks-live-text)}
+.tonks-live-editor .cm-cursor{border-left-color:var(--tonks-live-text)}
+
+.tonks-live-editor .tonks-live-edit{background:var(--tonks-live-soft);color:var(--tonks-live-text);border:1px solid var(--tonks-live-border);box-shadow:none}

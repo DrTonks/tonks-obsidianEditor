@@ -31,3 +31,5 @@
 使用 Obsidian 的 CodeMirror StateField 与块替换装饰，仅渲染不与选区相交的完整块。适配器从实际 AST 生成源码范围，并处理 Frontmatter/BOM/CRLF 偏移。输入后 300ms 更新，异步结果需匹配文档快照和文件；切换/卸载释放定时器、消息监听和视图状态。CM 依赖由 Obsidian 提供，打包 external 避免多实例。
 
 各块仍在不授予同源权限的 sandbox iframe 内，点击通过实例 token 与 event.source 校验定位到原生编辑器；不通过预览 DOM 回写正文。真实 Obsidian 1.13.7 已验证开关、段落点击、更新、撤销与模式恢复。
+
+实时预览主题来自适配器输出的 HTML/CSS。`live-theme.js` 在每个编辑器的隔离 iframe 中解析实际调色板，按 source/token 校验消息，仅更新本编辑区；主题切换替换探针，退出、原生模式切换与卸载均清理样式和监听器。无需在插件中重复维护四套博客色值。

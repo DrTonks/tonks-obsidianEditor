@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test test.mjs integration.test.mjs config.test.mjs live-preview.test.mjs",
+    "test": "node --test test.mjs integration.test.mjs config.test.mjs live-preview.test.mjs live-theme.test.mjs",
     "install:content": "node install.mjs"
   },
   "devDependencies": {

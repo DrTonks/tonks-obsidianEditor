@@ -5,8 +5,9 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {JSDOM} from 'jsdom';
 const require=createRequire(import.meta.url);
-const {EditorState,StateField}=require('@codemirror/state');
-const nativePreview=StateField.define({create:()=>false,update:v=>v});
+const {EditorState,StateField,StateEffect}=require('@codemirror/state');
+const nativeMode=StateEffect.define();
+const nativePreview=StateField.define({create:()=>false,update:(v,t)=>{for(const e of t.effects)if(e.is(nativeMode))v=e.value;return v;}});
 const api={editorLivePreviewField:nativePreview,editorInfoField:StateField.define({create:()=>({file:{path:'post.md'}}),update:v=>v})};
 const bundle=await build({entryPoints:['live-preview.js'],bundle:true,write:false,platform:'node',format:'cjs',external:['obsidian','@codemirror/state','@codemirror/view']});
 const mod={exports:{}};
@@ -63,16 +64,25 @@ test('whole-line blocks preserve same-line HTML siblings and leave unmapped text
  assert.equal(normalize('one\ntwo',[{from:0,to:4,html:'one'},{from:4,to:7,html:'two'}]).length,2);
 });
 
-test('live shell follows editor surface and overrides per-block article margins',()=>{
+test('live shell preserves all four selected blog themes regardless of editor appearance',()=>{
  const host=new JSDOM('<body class="theme-dark" style="--background-primary:#242424;--text-normal:#ddd;--font-text-size:17px"></body>').window.document;
- const preview=new JSDOM('<html data-yellow="true"><head></head><body><script nonce="tonks-preview">/* interactions */</script></body></html>').window.document;
- const shell=liveShell(preview,host);
- assert.match(shell.before, /class="dark" data-yellow="true"/);
- assert.match(shell.before, /--card-bg:#242424/);
- assert.match(shell.before, /background:var\(--card-bg\)/);
- assert.match(shell.before, /#post-container \.custom-md>:first-child\{margin-top:0!important\}/);
- assert.match(shell.before, /font-size:17px/);
- assert.match(shell.after, /interactions/);
- host.body.classList.remove('theme-dark');
- assert.match(liveShell(preview,host).before, /class="" data-yellow="true"/);
+ for(const dark of [false,true])for(const yellow of [false,true]){
+  const preview=new JSDOM(`<html class="${dark?'dark':''}" data-yellow="${yellow}"><head><style>:root{--card-bg:white}.dark{--card-bg:black}</style></head><body><script nonce="tonks-preview">/* interactions */</script></body></html>`).window.document;
+  const shell=liveShell(preview,host);
+  assert.ok(shell.before.includes(`<html class="${dark?'dark':''}" data-yellow="${yellow}">`));
+  assert.doesNotMatch(shell.before, /#242424|#ddd|--card-bg:[^;}]+!important/);
+  assert.match(shell.before, /#post-container \.custom-md>:first-child\{margin-top:0!important\}/);
+  assert.match(shell.before, /font-size:17px/);assert.match(shell.after, /interactions/);
+ }
+});
+
+test('switching native editor mode clears the theme and schedules a fresh render on return',()=>{
+ const plugin={settings:{livePreview:true},liveWorkers:new Set()};
+ const [,Worker]=createLivePreview(plugin);
+ const view={state:EditorState.create({doc:'text',extensions:[nativePreview]})};
+ const worker=new Worker(view);clearTimeout(worker.timer);let cleared=0;worker.theme.clear=()=>cleared++;
+ const change=value=>{const startState=view.state,transaction=startState.update({effects:nativeMode.of(value)});view.state=transaction.state;worker.update({startState,state:view.state,docChanged:false,transactions:[transaction]});};
+ change(true);assert.equal(cleared,1);
+ const generation=worker.generation;change(false);assert.equal(worker.generation,generation+1);assert.ok(worker.timer);assert.equal(cleared,1);
+ worker.destroy();assert.equal(cleared,2);
 });

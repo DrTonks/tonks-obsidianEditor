@@ -1,5 +1,6 @@
 import {StateEffect, StateField} from '@codemirror/state';
 import {Decoration, EditorView, ViewPlugin, WidgetType} from '@codemirror/view';
+import {LiveTheme} from './live-theme.js';
 import {editorInfoField, editorLivePreviewField} from 'obsidian';
 
 export const liveResult = StateEffect.define();
@@ -34,16 +35,12 @@ export function lineBlocks(blocks,doc){
   return [{from:group.from,to:group.to,html:group.blocks.map(block=>block.html).join('')}];
  });
 }
-// Live blocks share the editor surface; the full-page preview keeps its own theme.
+// Keep the selected blog theme; only adapt layout and font size to the editor.
 export function liveShell(doc, hostDocument) {
  const body=hostDocument?.body, styles=body?hostDocument.defaultView.getComputedStyle(body):null;
- const dark=body?body.classList.contains('theme-dark'):doc.documentElement.classList.contains('dark');
- const value=(key,fallback)=>styles?.getPropertyValue(key).trim()||fallback;
- const background=value('--background-primary',dark?'#1e1e1e':'#ffffff');
- const foreground=value('--text-normal',dark?'#dadada':'#222222');
- const size=value('--font-text-size','16px');
- const overrides=`html,body{margin:0;min-height:0;overflow:hidden;background:var(--card-bg)}html{--card-bg:${background}!important;--tw-prose-body:${foreground}!important;--tw-prose-headings:${foreground}!important}body{color:var(--tw-prose-body)}#post-container{padding:0;max-width:none}#post-container .custom-md{max-width:none!important;font-size:${size};line-height:1.7}#post-container .custom-md>:first-child{margin-top:0!important}#post-container .custom-md>:last-child{margin-bottom:0!important}`;
- return {before:`<!doctype html><html class="${dark?'dark':''}" data-yellow="${doc.documentElement.dataset.yellow}">${doc.head.outerHTML}<body><style>${overrides.replace(/<\/style/gi,'<\\/style')}</style><article id="post-container"><div class="custom-md">`,after:`</div></article>${[...doc.body.querySelectorAll('script')].map(el=>el.outerHTML).join('')}`};
+ const size=styles?.getPropertyValue('--font-text-size').trim()||'16px';
+ const overrides=`html,body{margin:0;min-height:0;overflow:hidden;background:var(--card-bg)}#post-container{padding:0;max-width:none}#post-container .custom-md{max-width:none!important;font-size:${size};line-height:1.7}#post-container .custom-md>:first-child{margin-top:0!important}#post-container .custom-md>:last-child{margin-bottom:0!important}`;
+ return {before:`<!doctype html><html class="${doc.documentElement.classList.contains('dark')?'dark':''}" data-yellow="${doc.documentElement.dataset.yellow==='true'}">${doc.head.outerHTML}<body><style>${overrides.replace(/<\/style/gi,'<\\/style')}</style><article id="post-container"><div class="custom-md">`,after:`</div></article>${[...doc.body.querySelectorAll('script')].map(el=>el.outerHTML).join('')}`};
 }
 
 class BlogBlock extends WidgetType {
@@ -93,9 +90,9 @@ export function createLivePreview(plugin) {
   provide: field => EditorView.decorations.from(field,value=>value.decorations),
  });
  const worker = ViewPlugin.fromClass(class {
-  constructor(view) { this.view=view; this.dead=false; this.generation=0; this.schedule(); plugin.liveWorkers.add(this); }
-  update(update) { if(update.docChanged || update.transactions.some(t=>t.effects.some(e=>e.is(liveRefresh))))this.schedule(); }
-  schedule() { clearTimeout(this.timer); this.generation++; if(!plugin.settings.livePreview)return; this.timer=setTimeout(()=>this.render(),300); }
+  constructor(view) { this.view=view; this.dead=false; this.generation=0; this.theme=new LiveTheme(view); this.schedule(); plugin.liveWorkers.add(this); }
+  update(update) { if(update.docChanged || update.startState.field(editorLivePreviewField,false)!==update.state.field(editorLivePreviewField,false) || update.transactions.some(t=>t.effects.some(e=>e.is(liveRefresh))))this.schedule(); }
+  schedule() { clearTimeout(this.timer); this.generation++; if(!plugin.settings.livePreview||this.view.state.field(editorLivePreviewField,false)){this.theme.clear();return;} this.timer=setTimeout(()=>this.render(),300); }
   async render() {
    const generation=this.generation,view=this.view,info=view.state.field(editorInfoField,false);
    if(!info?.file || !plugin.settings.livePreview || view.state.field(editorLivePreviewField,false))return;
@@ -106,12 +103,13 @@ export function createLivePreview(plugin) {
     if(!Array.isArray(rendered.blocks))throw Error('博客适配器不支持实时预览，请先在博客目录运行 pnpm editor:build');
     const doc=new DOMParser().parseFromString(rendered.html,'text/html');
     const shell=liveShell(doc,view.dom?.ownerDocument);
+    this.theme.update(shell);
     const blocks=lineBlocks(rendered.blocks,view.state.doc);
     view.dispatch({effects:liveResult.of({blocks,shell})});this.lastError='';
    } catch(error) { if(!this.dead&&generation===this.generation&&this.lastError!==error.message){this.lastError=error.message;plugin.liveError(error.message);} }
   }
   refresh() { this.view.dispatch({effects:liveRefresh.of(null)}); }
-  destroy() { this.dead=true;this.generation++;clearTimeout(this.timer);plugin.liveWorkers.delete(this); }
+  destroy() { this.dead=true;this.generation++;clearTimeout(this.timer);this.theme.clear();plugin.liveWorkers.delete(this); }
  });
  return [field,worker];
 }

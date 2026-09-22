@@ -24,21 +24,21 @@ export default class BlogTools extends Plugin {
   this.overlays=new Set();
   this.registerEvent(this.app.workspace.on("file-open",()=>{for(const close of [...this.overlays])close();}));
   this.addSettingTab(new Settings(this.app,this));
-  this.addCommand({id:'toggle-live-preview',name:'开启 / 关闭单栏实时预览',callback:()=>this.setLivePreview(!this.settings.livePreview)});
-  this.liveButton=this.addRibbonIcon('scan-eye','开启 / 关闭博客实时预览',()=>this.setLivePreview(!this.settings.livePreview));
+  this.addCommand({id:'toggle-live-preview',name:'实时预览模式',callback:()=>this.setLivePreview(!this.settings.livePreview)});
+  this.liveButton=this.addRibbonIcon('scan-eye','实时预览模式',()=>this.setLivePreview(!this.settings.livePreview));
   this.registerEvent(this.app.workspace.on('active-leaf-change',()=>this.prepareLiveView()));
   this.registerEvent(this.app.workspace.on('file-open',()=>this.prepareLiveView()));
   this.app.workspace.onLayoutReady(()=>this.prepareLiveView());
   this.registerEvent(this.app.workspace.on('css-change',()=>{for(const worker of this.liveWorkers)worker.refresh();}));
   this.updateLiveButton();
-  this.addCommand({id:'preview',name:'博客预览 / 返回编辑',editorCallback:(_e,v)=>this.preview(v)});
-  this.addRibbonIcon('book-open','博客预览',()=>{const view=this.app.workspace.getActiveViewOfType(MarkdownView);if(view)this.preview(view);else new Notice('请先打开一篇 Markdown 文章');});
+  this.addCommand({id:'preview',name:'预览',editorCallback:(_e,v)=>this.preview(v)});
+  this.addRibbonIcon('book-open','预览',()=>{const view=this.app.workspace.getActiveViewOfType(MarkdownView);if(view)this.preview(view);else new Notice('请先打开一篇 Markdown 文章');});
   this.registerEvent(this.app.workspace.on('editor-menu',(menu,editor,view)=>{
-   menu.addSeparator();menu.addItem(item=>item.setTitle('博客预览').setIcon('book-open').onClick(()=>this.preview(view)));
-   menu.addItem(item=>item.setTitle('单栏实时预览').setIcon('scan-eye').setChecked(this.settings.livePreview).onClick(()=>this.setLivePreview(!this.settings.livePreview)));
-   try{const config=this.readConfig();menu.addItem(item=>{item.setTitle(config.name+' · 格式').setIcon('blocks');const sub=item.setSubmenu();for(const f of config.formats)sub.addItem(i=>i.setTitle(f.name).onClick(()=>this.insert(f.id,editor,view)));});}catch(e){menu.addItem(item=>item.setTitle('博客配置不可用：'+e.message).setDisabled(true));}
+   menu.addSeparator();menu.addItem(item=>item.setTitle('预览').setIcon('book-open').onClick(()=>this.preview(view)));
+   menu.addItem(item=>item.setTitle('实时预览模式').setIcon('scan-eye').setChecked(this.settings.livePreview).onClick(()=>this.setLivePreview(!this.settings.livePreview)));
+   try{const config=this.readConfig();menu.addItem(item=>{item.setTitle('博客特殊语法').setIcon('blocks');const sub=item.setSubmenu();for(const f of config.formats)sub.addItem(i=>i.setTitle(f.name).onClick(()=>this.insert(f.id,editor,view)));});}catch(e){menu.addItem(item=>item.setTitle('博客配置不可用：'+e.message).setDisabled(true));}
   }));
-  this.addCommand({id:'insert-format',name:'选择博客格式',editorCallback:(e,v)=>{try{new Choose(this.app,this.readConfig().formats.map(f=>({label:f.name,id:f.id})),f=>this.insert(f.id,e,v)).open();}catch(error){new Notice(error.message);}}});
+  this.addCommand({id:'insert-format',name:'博客特殊语法',editorCallback:(e,v)=>{try{new Choose(this.app,this.readConfig().formats.map(f=>({label:f.name,id:f.id})),f=>this.insert(f.id,e,v)).open();}catch(error){new Notice(error.message);}}});
  }
  onunload(){for(const close of this.overlays)close();this.settings.livePreview=false;for(const worker of this.liveWorkers)worker.destroy();this.restoreLiveViews();}
  updateLiveButton(){this.liveButton?.classList.toggle('is-active',this.settings.livePreview);this.liveButton?.setAttribute('aria-pressed',String(this.settings.livePreview));}
@@ -150,8 +150,8 @@ export default class BlogTools extends Plugin {
 class Settings extends PluginSettingTab {
  constructor(app,plugin){super(app,plugin);this.plugin=plugin;}
  display(){this.containerEl.empty();this.containerEl.createEl('h2',{text:'博客工具'});
-  new Setting(this.containerEl).setName('单栏实时预览').setDesc('光标所在块保持 Markdown 编辑，其余内容显示博客样式；停笔 300ms 后刷新。关闭后恢复原编辑模式。').addToggle(t=>t.setValue(this.plugin.settings.livePreview).onChange(value=>this.plugin.setLivePreview(value)));
-  try{const config=this.plugin.readConfig();new Setting(this.containerEl).setName('预览主题').addDropdown(d=>{for(const theme of config.themes)d.addOption(theme.id,theme.name);d.setValue(this.plugin.settings.theme).onChange(async value=>{this.plugin.settings.theme=value;await this.plugin.saveData(this.plugin.settings);for(const worker of this.plugin.liveWorkers)worker.refresh();});});}catch{/* The existing root/config settings below allow repairing configuration. */}
+  new Setting(this.containerEl).setName('实时预览模式').setDesc('光标所在块保持 Markdown 编辑，其余内容显示博客样式；停笔 300ms 后刷新。关闭后恢复原编辑模式。').addToggle(t=>t.setValue(this.plugin.settings.livePreview).onChange(value=>this.plugin.setLivePreview(value)));
+  try{const config=this.plugin.readConfig();new Setting(this.containerEl).setName('预览主题').setDesc('同时用于预览和实时预览模式，独立于 Obsidian 的外观主题。').addDropdown(d=>{for(const theme of config.themes)d.addOption(theme.id,theme.name);d.setValue(this.plugin.settings.theme).onChange(async value=>{this.plugin.settings.theme=value;await this.plugin.saveData(this.plugin.settings);for(const worker of this.plugin.liveWorkers)worker.refresh();});});}catch{/* The existing root/config settings below allow repairing configuration. */}
   for(const [key,label,desc]of [['blogRoot','博客项目目录','留空时从工作区向上查找 editor/blog-editor.json。'],['configPath','编辑器配置路径','相对于博客根目录；默认 editor/blog-editor.json。配置中的本地预览模块仅应来自你信任的博客代码。']])new Setting(this.containerEl).setName(label).setDesc(desc).addText(t=>t.setValue(this.plugin.settings[key]).onChange(async value=>{this.plugin.settings[key]=value;await this.plugin.saveData(this.plugin.settings);}));
  }
 }
