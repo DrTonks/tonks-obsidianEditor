@@ -13,7 +13,7 @@ const bundle=await build({entryPoints:['live-preview.js'],bundle:true,write:fals
 const mod={exports:{}};
 const viewAPI={...require('@codemirror/view'),ViewPlugin:{fromClass:cls=>cls}};
 vm.runInNewContext(bundle.outputFiles[0].text,{module:mod,exports:mod.exports,require:id=>id==='obsidian'?api:id==='@codemirror/view'?viewAPI:require(id),setTimeout,clearTimeout,console,DOMParser:new JSDOM('').window.DOMParser});
-const {createLivePreview,liveResult,liveRefresh,visibleBlocks,lineBlocks,liveShell}=mod.exports;
+const {createLivePreview,liveResult,liveRefresh,visibleBlocks,lineBlocks,liveShell,scriptsForBlock}=mod.exports;
 
 test('only valid inactive blocks are rendered; spanning selections retain source',()=>{
  const blocks=[{from:0,to:4},{from:6,to:10},{from:12,to:18},{from:17,to:20},{from:-1,to:2}];
@@ -85,4 +85,15 @@ test('switching native editor mode clears the theme and schedules a fresh render
  change(true);assert.equal(cleared,1);
  const generation=worker.generation;change(false);assert.equal(worker.generation,generation+1);assert.ok(worker.timer);assert.equal(cleared,1);
  worker.destroy();assert.equal(cleared,2);
+});
+
+
+test('optional diagram runtime is included only in matching live blocks',()=>{
+ const doc=new JSDOM('<body><script nonce="tonks-preview" data-preview-selector=".mermaid-diagram">/* Mermaid runtime */</script><script nonce="tonks-preview">/* shared interactions */</script></body>').window.document;
+ const shell=liveShell(doc,doc);
+ assert.doesNotMatch(shell.after,/Mermaid runtime/);
+ assert.match(shell.after,/shared interactions/);
+ assert.equal(scriptsForBlock(shell,'<p>ordinary paragraph</p>',doc),'');
+ assert.match(scriptsForBlock(shell,'<div class="mermaid-diagram"></div>',doc),/Mermaid runtime/);
+ assert.equal(scriptsForBlock({conditionalScripts:[{selector:'[',html:'bad'}]},'<p>text</p>',doc),'');
 });

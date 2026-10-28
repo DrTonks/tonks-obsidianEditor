@@ -40,12 +40,23 @@ export function liveShell(doc, hostDocument) {
  const body=hostDocument?.body, styles=body?hostDocument.defaultView.getComputedStyle(body):null;
  const size=styles?.getPropertyValue('--font-text-size').trim()||'16px';
  const overrides=`html,body{margin:0;min-height:0;overflow:hidden;background:var(--card-bg)}#post-container{padding:0;max-width:none}#post-container .custom-md{max-width:none!important;font-size:${size};line-height:1.7}#post-container .custom-md>:first-child{margin-top:0!important}#post-container .custom-md>:last-child{margin-bottom:0!important}`;
- return {before:`<!doctype html><html class="${doc.documentElement.classList.contains('dark')?'dark':''}" data-yellow="${doc.documentElement.dataset.yellow==='true'}">${doc.head.outerHTML}<body><style>${overrides.replace(/<\/style/gi,'<\\/style')}</style><article id="post-container"><div class="custom-md">`,after:`</div></article>${[...doc.body.querySelectorAll('script')].map(el=>el.outerHTML).join('')}`};
+ const scripts=[...doc.body.querySelectorAll('script')];
+ const conditionalScripts=scripts.filter(el=>el.dataset.previewSelector).map(el=>({selector:el.dataset.previewSelector,html:el.outerHTML}));
+ return {conditionalScripts,before:`<!doctype html><html class="${doc.documentElement.classList.contains('dark')?'dark':''}" data-yellow="${doc.documentElement.dataset.yellow==='true'}">${doc.head.outerHTML}<body><style>${overrides.replace(/<\/style/gi,'<\\/style')}</style><article id="post-container"><div class="custom-md">`,after:`</div></article>${scripts.filter(el=>!el.dataset.previewSelector).map(el=>el.outerHTML).join('')}`};
+}
+
+
+// Heavy optional runtimes belong only to blocks that need them (e.g. Mermaid).
+export function scriptsForBlock(shell, html, doc) {
+ const content=doc.createElement('template');content.innerHTML=html;
+ return (shell.conditionalScripts||[]).filter(script=>{
+  try{return content.content.querySelector(script.selector);}catch{return false;}
+ }).map(script=>script.html).join('');
 }
 
 class BlogBlock extends WidgetType {
  constructor(block, shell) { super(); this.block = block; this.shell = shell; }
- eq(other) { return this.block.from === other.block.from && this.block.to === other.block.to && this.block.html === other.block.html && this.shell.before === other.shell.before && this.shell.after === other.shell.after; }
+ eq(other) { return this.block.from === other.block.from && this.block.to === other.block.to && this.block.html === other.block.html && this.shell.before === other.shell.before && this.shell.after === other.shell.after && (this.shell.conditionalScripts||[]).length === (other.shell.conditionalScripts||[]).length && (this.shell.conditionalScripts||[]).every((script,i)=>script.selector===other.shell.conditionalScripts[i].selector&&script.html===other.shell.conditionalScripts[i].html); }
  toDOM(view) {
   const doc = view.dom.ownerDocument;
   const host = doc.createElement('div'); host.className = 'tonks-live-block';
@@ -65,7 +76,7 @@ class BlogBlock extends WidgetType {
   doc.defaultView.addEventListener('message', listener);
   host.cleanup = () => doc.defaultView.removeEventListener('message', listener);
   const bridge = `const send=(type,extra={})=>parent.postMessage({token:${JSON.stringify(token)},type,...extra},'*');new ResizeObserver(()=>send('resize',{height:document.body.getBoundingClientRect().height})).observe(document.body);document.addEventListener('click',event=>{if(!event.target.closest('a,button,input,label,audio,summary'))send('edit');});`;
-  frame.srcdoc = this.shell.before + this.block.html + this.shell.after + `<script nonce="tonks-preview">${bridge}</script></body></html>`;
+  frame.srcdoc = this.shell.before + this.block.html + this.shell.after + scriptsForBlock(this.shell,this.block.html,doc) + `<script nonce="tonks-preview">${bridge}</script></body></html>`;
   return host;
  }
  destroy(dom) { dom.cleanup?.(); }
